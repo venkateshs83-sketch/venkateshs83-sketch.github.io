@@ -1,0 +1,89 @@
+// db.js — SQLite storage for periodic readings and daily summaries
+const path = require('path');
+const Database = require('better-sqlite3');
+
+const db = new Database(path.join(__dirname, 'data', 'tesla.db'));
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS readings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    battery_level INTEGER,
+    charging_state TEXT,
+    charge_energy_added REAL,
+    odometer REAL
+  );
+
+  CREATE TABLE IF NOT EXISTS daily_summary (
+    date TEXT PRIMARY KEY,
+    charging_minutes INTEGER DEFAULT 0,
+    kwh_added REAL DEFAULT 0,
+    km_driven REAL DEFAULT 0,
+    start_odometer REAL,
+    end_odometer REAL
+  );
+`);
+
+function insertReading(reading) {
+  const stmt = db.prepare(`
+    INSERT INTO readings (timestamp, battery_level, charging_state, charge_energy_added, odometer)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  stmt.run(
+    reading.timestamp,
+    reading.battery_level,
+    reading.charging_state,
+    reading.charge_energy_added,
+    reading.odometer
+  );
+}
+
+function getReadingsToday() {
+  const today = new Date().toISOString().slice(0, 10);
+  return db
+    .prepare(`SELECT * FROM readings WHERE timestamp LIKE ? ORDER BY timestamp ASC`)
+    .all(`${today}%`);
+}
+
+function getReadingsRange(days) {
+  return db
+    .prepare(`SELECT * FROM readings WHERE timestamp >= datetime('now', ?) ORDER BY timestamp ASC`)
+    .all(`-${days} days`);
+}
+
+function getLatestReading() {
+  return db.prepare(`SELECT * FROM readings ORDER BY timestamp DESC LIMIT 1`).get();
+}
+
+function upsertDailySummary(date, summary) {
+  const stmt = db.prepare(`
+    INSERT INTO daily_summary (date, charging_minutes, kwh_added, km_driven, start_odometer, end_odometer)
+    VALUES (@date, @charging_minutes, @kwh_added, @km_driven, @start_odometer, @end_odometer)
+    ON CONFLICT(date) DO UPDATE SET
+      charging_minutes = excluded.charging_minutes,
+      kwh_added = excluded.kwh_added,
+      km_driven = excluded.km_driven,
+      end_odometer = excluded.end_odometer
+  `);
+  stmt.run({ date, ...summary });
+}
+
+function getDailySummary(date) {
+  return db.prepare(`SELECT * FROM daily_summary WHERE date = ?`).get(date);
+}
+
+function getSummaryRange(days) {
+  return db
+    .prepare(`SELECT * FROM daily_summary WHERE date >= date('now', ?) ORDER BY date ASC`)
+    .all(`-${days} days`);
+}
+
+module.exports = {
+  insertReading,
+  getReadingsToday,
+  getReadingsRange,
+  getLatestReading,
+  upsertDailySummary,
+  getDailySummary,
+  getSummaryRange,
+};
