@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.venkat.tesladashboard.ui.theme.TeslaDashboardTheme
+import androidx.compose.foundation.background
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -211,18 +212,35 @@ fun HistoryChart(history: List<DailySummary>) {
     val maxKm = (history.maxOfOrNull { it.km_driven ?: 0.0 } ?: 1.0).coerceAtLeast(1.0)
 
     Card(modifier = Modifier.fillMaxWidth()) {
-        Canvas(modifier = Modifier.fillMaxWidth().height(120.dp).padding(12.dp)) {
-            val barWidth = size.width / (history.size * 1.5f)
-            val gap = barWidth * 0.5f
-            history.forEachIndexed { index, day ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            history.forEach { day ->
                 val km = day.km_driven ?: 0.0
-                val barHeight = (km / maxKm).toFloat() * size.height
-                val x = index * (barWidth + gap)
-                drawRect(
-                    color = Color(0xFF2196F3),
-                    topLeft = Offset(x, size.height - barHeight),
-                    size = Size(barWidth, barHeight)
-                )
+                val barHeightDp = (80 * (km / maxKm)).dp.coerceAtLeast(2.dp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(fmt(km), style = MaterialTheme.typography.labelSmall)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Column(
+                        modifier = Modifier
+                            .width(28.dp)
+                            .height(80.dp),
+                        verticalArrangement = Arrangement.Bottom
+                    ) {
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(barHeightDp)
+                                .background(Color(0xFF2196F3))
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        day.date?.takeLast(5) ?: "",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
         }
     }
