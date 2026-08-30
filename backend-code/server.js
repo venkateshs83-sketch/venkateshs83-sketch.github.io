@@ -65,6 +65,7 @@ function rollupToday() {
   const chargingReadings = readings.filter((r) => r.charging_state === 'Charging');
   const kwhValues = readings.map((r) => r.charge_energy_added).filter((v) => v != null);
   const odometers = readings.map((r) => r.odometer).filter((v) => v != null);
+  const batteryReadings = readings.filter((r) => r.battery_level != null);
 
   const summary = {
     charging_minutes: chargingReadings.length * 15,
@@ -72,6 +73,8 @@ function rollupToday() {
     km_driven: odometers.length >= 2 ? (Math.max(...odometers) - Math.min(...odometers)) * 1.60934 : 0,
     start_odometer: odometers.length ? Math.min(...odometers) : null,
     end_odometer: odometers.length ? Math.max(...odometers) : null,
+    start_battery: batteryReadings.length ? batteryReadings[0].battery_level : null,
+    end_battery: batteryReadings.length ? batteryReadings[batteryReadings.length - 1].battery_level : null,
   };
 
   db.upsertDailySummary(today, summary);
@@ -96,6 +99,14 @@ app.get('/summary/range', requireApiKey, (req, res) => {
   const days = parseInt(req.query.days || '7', 10);
   const summaries = db.getSummaryRange(days);
   res.json(summaries);
+});
+
+app.get('/summary/week', requireApiKey, (req, res) => {
+  res.json(db.getSummaryAggregate(7));
+});
+
+app.get('/summary/month', requireApiKey, (req, res) => {
+  res.json(db.getSummaryAggregate(30));
 });
 
 app.get('/poll-now', requireApiKey, async (req, res) => {
