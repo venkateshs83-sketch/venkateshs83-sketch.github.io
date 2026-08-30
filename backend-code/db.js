@@ -1,4 +1,4 @@
-// db.js — SQLite storage for periodic readings and daily summaries
+// db.js — SQLite storage for periodic readings and daily/weekly/monthly summaries
 const path = require('path');
 const Database = require('better-sqlite3');
 
@@ -20,9 +20,15 @@ db.exec(`
     kwh_added REAL DEFAULT 0,
     km_driven REAL DEFAULT 0,
     start_odometer REAL,
-    end_odometer REAL
+    end_odometer REAL,
+    start_battery INTEGER,
+    end_battery INTEGER
   );
 `);
+
+// Migration-safe: add columns if this is an older existing database
+try { db.exec('ALTER TABLE daily_summary ADD COLUMN start_battery INTEGER'); } catch (e) {}
+try { db.exec('ALTER TABLE daily_summary ADD COLUMN end_battery INTEGER'); } catch (e) {}
 
 function insertReading(reading) {
   const stmt = db.prepare(`
@@ -57,13 +63,14 @@ function getLatestReading() {
 
 function upsertDailySummary(date, summary) {
   const stmt = db.prepare(`
-    INSERT INTO daily_summary (date, charging_minutes, kwh_added, km_driven, start_odometer, end_odometer)
-    VALUES (@date, @charging_minutes, @kwh_added, @km_driven, @start_odometer, @end_odometer)
+    INSERT INTO daily_summary (date, charging_minutes, kwh_added, km_driven, start_odometer, end_odometer, start_battery, end_battery)
+    VALUES (@date, @charging_minutes, @kwh_added, @km_driven, @start_odometer, @end_odometer, @start_battery, @end_battery)
     ON CONFLICT(date) DO UPDATE SET
       charging_minutes = excluded.charging_minutes,
       kwh_added = excluded.kwh_added,
       km_driven = excluded.km_driven,
-      end_odometer = excluded.end_odometer
+      end_odometer = excluded.end_odometer,
+      end_battery = excluded.end_battery
   `);
   stmt.run({ date, ...summary });
 }
@@ -78,6 +85,30 @@ function getSummaryRange(days) {
     .all(`-${days} days`);
 }
 
+// Aggregates daily rows over N days into one summary (used for weekly/monthly views)
+function getSummaryAggregate(days) {
+  const rows = db
+    .prepare(`SELECT * FROM daily_summary WHERE date >= date('now', ?) ORDER BY date ASC`)
+    .all(`-${days} days`);
+
+  if (rows.length === 0) {
+    return { days_count: 0, total_km: 0, total_kwh: 0, start_battery: null, end_battery: null };
+  }
+
+  const totalKm = rows.reduce((sum, r) => sum + (r.km_driven || 0), 0);
+  const totalKwh = rows.reduce((sum, r) => sum + (r.kwh_added || 0), 0);
+  const firstWithBattery = rows.find((r) => r.start_battery != null);
+  const lastWithBattery = [...rows].reverse().find((r) => r.end_battery != null);
+
+  return {
+    days_count: rows.length,
+    total_km: totalKm,
+    total_kwh: totalKwh,
+    start_battery: firstWithBattery ? firstWithBattery.start_battery : null,
+    end_battery: lastWithBattery ? lastWithBattery.end_battery : null,
+  };
+}
+
 module.exports = {
   insertReading,
   getReadingsToday,
@@ -86,4 +117,5 @@ module.exports = {
   upsertDailySummary,
   getDailySummary,
   getSummaryRange,
+  getSummaryAggregate,
 };
