@@ -73,11 +73,35 @@ function getSummaryRange(days) {
     .prepare(`SELECT * FROM daily_summary WHERE date >= date('now', ?) ORDER BY date ASC`)
     .all(`-${days} days`);
 }
-// Aggregates daily rows over N days into one summary (used for weekly/monthly views)
+// Aggregates daily rows over N days into one summary (used for weekly view)
 function getSummaryAggregate(days) {
   const rows = db
     .prepare(`SELECT * FROM daily_summary WHERE date >= date('now', ?) ORDER BY date ASC`)
     .all(`-${days} days`);
+  if (rows.length === 0) {
+    return { days_count: 0, total_km: 0, total_kwh: 0, start_battery: null, end_battery: null };
+  }
+  const totalKm = rows.reduce((sum, r) => sum + (r.km_driven || 0), 0);
+  const totalKwh = rows.reduce((sum, r) => sum + (r.kwh_added || 0), 0);
+  const firstWithBattery = rows.find((r) => r.start_battery != null);
+  const lastWithBattery = [...rows].reverse().find((r) => r.end_battery != null);
+  return {
+    days_count: rows.length,
+    total_km: totalKm,
+    total_kwh: totalKwh,
+    start_battery: firstWithBattery ? firstWithBattery.start_battery : null,
+    end_battery: lastWithBattery ? lastWithBattery.end_battery : null,
+  };
+}
+// All daily rows for the current calendar month (1st of month to today)
+function getCalendarMonthDays() {
+  return db
+    .prepare(`SELECT * FROM daily_summary WHERE date >= date('now', 'start of month') ORDER BY date ASC`)
+    .all();
+}
+// Aggregate for the current calendar month
+function getCalendarMonthAggregate() {
+  const rows = getCalendarMonthDays();
   if (rows.length === 0) {
     return { days_count: 0, total_km: 0, total_kwh: 0, start_battery: null, end_battery: null };
   }
@@ -145,4 +169,6 @@ module.exports = {
   getSummaryRange,
   getSummaryAggregate,
   getChargingSessions,
+  getCalendarMonthDays,
+  getCalendarMonthAggregate,
 };
