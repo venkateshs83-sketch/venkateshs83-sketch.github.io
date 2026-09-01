@@ -61,6 +61,9 @@ interface TeslaApi {
     @GET("summary/month")
     suspend fun getMonthSummary(@Header("x-api-key") apiKey: String): PeriodSummary
 
+    @GET("summary/month-days")
+    suspend fun getMonthDays(@Header("x-api-key") apiKey: String): List<DailySummary>
+
     @GET("charging-sessions")
     suspend fun getChargingSessions(
         @Header("x-api-key") apiKey: String,
