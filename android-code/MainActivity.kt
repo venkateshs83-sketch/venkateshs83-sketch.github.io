@@ -4,7 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,13 +17,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarViewWeek
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -32,15 +35,22 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.venkat.tesladashboard.ui.theme.TeslaDashboardTheme
-import androidx.compose.foundation.background
+import java.time.Duration
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.RowScope
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,7 +59,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             TeslaDashboardTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    DashboardScreen(modifier = Modifier.padding(innerPadding))
+                    AppRoot(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
@@ -66,51 +76,131 @@ fun batteryColor(level: Int?): Color {
 }
 
 fun milesToKm(miles: Double?): Double? = miles?.let { it * 1.60934 }
-
 fun fmt(value: Double?): String = value?.let { "%.1f".format(it) } ?: "--"
 
+fun formatSessionTime(iso: String?): String {
+    if (iso == null) return "--"
+    return try {
+        val dt = OffsetDateTime.parse(iso)
+        dt.format(DateTimeFormatter.ofPattern("MMM d, h:mm a"))
+    } catch (e: Exception) {
+        iso
+    }
+}
+
+fun formatTimeOnly(iso: String?): String {
+    if (iso == null) return "--"
+    return try {
+        val dt = OffsetDateTime.parse(iso)
+        dt.format(DateTimeFormatter.ofPattern("h:mm a"))
+    } catch (e: Exception) {
+        iso
+    }
+}
+
+fun sessionDetail(session: ChargingSession): String {
+    return try {
+        val start = OffsetDateTime.parse(session.start_time)
+        val end = OffsetDateTime.parse(session.end_time)
+        val dur = Duration.between(start, end)
+        val hours = dur.toMinutes() / 60.0
+        val avgKw = if (hours > 0) (session.kwh_added ?: 0.0) / hours else 0.0
+        val h = dur.toHours()
+        val m = dur.toMinutes() % 60
+        "Duration ${h}h ${m}m · Avg ${"%.1f".format(avgKw)} kW"
+    } catch (e: Exception) {
+        ""
+    }
+}
+
 @Composable
-fun DashboardScreen(modifier: Modifier = Modifier, viewModel: DashboardViewModel = viewModel()) {
+fun AppRoot(modifier: Modifier = Modifier, viewModel: DashboardViewModel = viewModel()) {
+    var selectedTab by remember { mutableStateOf("today") }
+
     LaunchedEffect(Unit) {
         viewModel.refresh()
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp, 16.dp, 16.dp, 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text("Tesla Dashboard", style = MaterialTheme.typography.headlineMedium)
-        }
-
-        item {
             Button(onClick = { viewModel.refresh() }) {
-                Text(if (viewModel.isLoading) "Refreshing..." else "Refresh")
+                Text(if (viewModel.isLoading) "..." else "Refresh")
             }
         }
 
         viewModel.errorMessage?.let { error ->
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text("Error: $error", modifier = Modifier.padding(12.dp))
-                }
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Text("Error: $error", modifier = Modifier.padding(12.dp))
             }
         }
 
-        item { StatusCard(viewModel) }
-        item { TodayCard(viewModel) }
-        item { PeriodCard(title = "This Week", icon = Icons.Filled.CalendarViewWeek, summary = viewModel.weekSummary) }
-        item { PeriodCard(title = "This Month", icon = Icons.Filled.CalendarMonth, summary = viewModel.monthSummary) }
+        Box(modifier = Modifier.weight(1f)) {
+            when (selectedTab) {
+                "today" -> TodayTab(viewModel)
+                "week" -> WeekTab(viewModel)
+                "month" -> MonthTab(viewModel)
+                "charge" -> ChargeTab(viewModel)
+            }
+        }
 
-        item {
-            Text("Last 7 Days", style = MaterialTheme.typography.titleMedium)
-        }
-        item {
-            HistoryChart(viewModel.history)
-        }
-        items(viewModel.history) { day ->
-            HistoryRow(day)
-        }
+        BottomNav(selectedTab) { selectedTab = it }
+    }
+}
+
+@Composable
+fun Box(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    androidx.compose.foundation.layout.Box(modifier = modifier) { content() }
+}
+
+@Composable
+fun BottomNav(selected: String, onSelect: (String) -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        NavItem("today", "Today", Icons.Filled.Dashboard, selected, onSelect)
+        NavItem("week", "Week", Icons.Filled.CalendarViewWeek, selected, onSelect)
+        NavItem("month", "Month", Icons.Filled.CalendarMonth, selected, onSelect)
+        NavItem("charge", "Charging", Icons.Filled.Bolt, selected, onSelect)
+    }
+}
+
+@Composable
+fun RowScope_placeholder() {}
+
+@Composable
+fun NavItem(key: String, label: String, icon: ImageVector, selected: String, onSelect: (String) -> Unit) {
+    val isSelected = key == selected
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .clickable { onSelect(key) }
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+fun TodayTab(viewModel: DashboardViewModel) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { StatusCard(viewModel) }
+        item { TodayMetrics(viewModel) }
     }
 }
 
@@ -157,50 +247,73 @@ fun StatusCard(viewModel: DashboardViewModel) {
 }
 
 @Composable
-fun TodayCard(viewModel: DashboardViewModel) {
+fun TodayMetrics(viewModel: DashboardViewModel) {
     val summary = viewModel.todaySummary
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Today", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            val startB = summary?.start_battery
-            val endB = summary?.end_battery
-            if (startB != null && endB != null) {
-                Text("Battery: $startB% → $endB%  (${if (startB > endB) "${startB - endB}% used" else "net charged"})")
-            }
-            val startOd = milesToKm(summary?.start_odometer)
-            val endOd = milesToKm(summary?.end_odometer)
-            if (startOd != null && endOd != null) {
-                Text("Odometer: ${fmt(startOd)} km → ${fmt(endOd)} km")
-            }
-            Text("Distance driven: ${fmt(summary?.km_driven)} km")
-            Text("Energy added: ${fmt(summary?.kwh_added)} kWh")
-            Text("Charging time: ${summary?.charging_minutes ?: 0} min")
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        MetricTile("Driven today", "${fmt(summary?.km_driven)} km", Modifier.weight(1f))
+        MetricTile("Energy added", "${fmt(summary?.kwh_added)} kWh", Modifier.weight(1f))
+    }
+}
+
+@Composable
+fun MetricTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium)
+            Text(value, style = MaterialTheme.typography.titleLarge)
         }
     }
 }
 
 @Composable
-fun PeriodCard(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, summary: PeriodSummary?) {
+fun WeekTab(viewModel: DashboardViewModel) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { PeriodCard("Battery this week", viewModel.weekSummary) }
+        item { HistoryChart(viewModel.history) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricTile("Total driven", "${fmt(viewModel.weekSummary?.total_km)} km", Modifier.weight(1f))
+                MetricTile("Total energy", "${fmt(viewModel.weekSummary?.total_kwh)} kWh", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+fun MonthTab(viewModel: DashboardViewModel) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item { PeriodCard("Battery this month", viewModel.monthSummary) }
+        item { MonthChart(viewModel.monthHistory) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MetricTile("Total driven", "${fmt(viewModel.monthSummary?.total_km)} km", Modifier.weight(1f))
+                MetricTile("Total energy", "${fmt(viewModel.monthSummary?.total_kwh)} kWh", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+fun PeriodCard(title: String, summary: PeriodSummary?) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(imageVector = icon, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(title, style = MaterialTheme.typography.titleMedium)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(6.dp))
             if (summary == null || summary.days_count == 0) {
                 Text("No data yet")
             } else {
                 val startB = summary.start_battery
                 val endB = summary.end_battery
                 if (startB != null && endB != null) {
-                    Text("Battery: $startB% → $endB%")
+                    Text("$startB% \u2192 $endB%", style = MaterialTheme.typography.headlineSmall)
                 }
-                Text("Distance driven: ${fmt(summary.total_km)} km")
-                Text("Energy added: ${fmt(summary.total_kwh)} kWh")
-                Text("Days of data: ${summary.days_count}")
+                Text("${summary.days_count} days of data", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -223,22 +336,41 @@ fun HistoryChart(history: List<DailySummary>) {
                     Text(fmt(km), style = MaterialTheme.typography.labelSmall)
                     Spacer(modifier = Modifier.height(4.dp))
                     Column(
-                        modifier = Modifier
-                            .width(28.dp)
-                            .height(80.dp),
+                        modifier = Modifier.width(28.dp).height(80.dp),
                         verticalArrangement = Arrangement.Bottom
                     ) {
                         androidx.compose.foundation.layout.Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(barHeightDp)
-                                .background(Color(0xFF2196F3))
+                            modifier = Modifier.fillMaxWidth().height(barHeightDp).background(Color(0xFF2196F3))
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        day.date?.takeLast(5) ?: "",
-                        style = MaterialTheme.typography.labelSmall
+                    Text(day.date?.takeLast(5) ?: "", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MonthChart(history: List<DailySummary>) {
+    if (history.isEmpty()) return
+    val maxKm = (history.maxOfOrNull { it.km_driven ?: 0.0 } ?: 1.0).coerceAtLeast(1.0)
+    val scrollState = rememberScrollState()
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(scrollState).padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            history.forEach { day ->
+                val km = day.km_driven ?: 0.0
+                val barHeightDp = (60 * (km / maxKm)).dp.coerceAtLeast(2.dp)
+                Column(
+                    modifier = Modifier.width(8.dp).height(60.dp),
+                    verticalArrangement = Arrangement.Bottom
+                ) {
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier.fillMaxWidth().height(barHeightDp).background(Color(0xFF2196F3))
                     )
                 }
             }
@@ -247,16 +379,48 @@ fun HistoryChart(history: List<DailySummary>) {
 }
 
 @Composable
-fun HistoryRow(day: DailySummary) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(day.date ?: "Unknown date", style = MaterialTheme.typography.bodyLarge)
-            val startB = day.start_battery
-            val endB = day.end_battery
-            if (startB != null && endB != null) {
-                Text("Battery: $startB% → $endB%")
+fun ChargeTab(viewModel: DashboardViewModel) {
+    var expandedDetail by remember { mutableStateOf<String?>(null) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (viewModel.chargingSessions.isEmpty()) {
+            item { Text("No charging sessions yet") }
+        }
+        items(viewModel.chargingSessions.reversed()) { session ->
+            Card(
+                modifier = Modifier.fillMaxWidth().clickable {
+                    expandedDetail = sessionDetail(session)
+                }
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(imageVector = Icons.Filled.Bolt, contentDescription = null)
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "${formatSessionTime(session.start_time)} to ${formatTimeOnly(session.end_time)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "${session.start_battery}% \u2192 ${session.end_battery}%",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Text("${fmt(session.kwh_added)} kWh", style = MaterialTheme.typography.titleMedium)
+                }
             }
-            Text("${fmt(day.kwh_added)} kWh · ${fmt(day.km_driven)} km")
+        }
+        expandedDetail?.let { detail ->
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(detail, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
     }
 }
