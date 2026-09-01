@@ -109,6 +109,11 @@ app.get('/summary/month', requireApiKey, (req, res) => {
   res.json(db.getSummaryAggregate(30));
 });
 
+app.get('/charging-sessions', requireApiKey, (req, res) => {
+  const days = parseInt(req.query.days || '30', 10);
+  res.json(db.getChargingSessions(days));
+});
+
 app.get('/poll-now', requireApiKey, async (req, res) => {
   const reading = await pollVehicle();
   res.json({ reading });
