@@ -37,7 +37,7 @@ class DashboardViewModel : ViewModel() {
                 latestReading = ApiClient.api.getStatus(API_KEY).latest
                 todaySummary = ApiClient.api.getTodaySummary(API_KEY)
                 history = ApiClient.api.getRangeSummary(API_KEY, 7)
-                monthHistory = ApiClient.api.getRangeSummary(API_KEY, 30)
+                monthHistory = ApiClient.api.getMonthDays(API_KEY)
                 weekSummary = ApiClient.api.getWeekSummary(API_KEY)
                 monthSummary = ApiClient.api.getMonthSummary(API_KEY)
                 chargingSessions = ApiClient.api.getChargingSessions(API_KEY, 30)
