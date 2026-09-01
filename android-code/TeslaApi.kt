@@ -33,6 +33,15 @@ data class PeriodSummary(
     val end_battery: Int?
 )
 
+data class ChargingSession(
+    val date: String?,
+    val start_time: String?,
+    val end_time: String?,
+    val kwh_added: Double?,
+    val start_battery: Int?,
+    val end_battery: Int?
+)
+
 interface TeslaApi {
     @GET("status")
     suspend fun getStatus(@Header("x-api-key") apiKey: String): StatusResponse
@@ -51,4 +60,10 @@ interface TeslaApi {
 
     @GET("summary/month")
     suspend fun getMonthSummary(@Header("x-api-key") apiKey: String): PeriodSummary
+
+    @GET("charging-sessions")
+    suspend fun getChargingSessions(
+        @Header("x-api-key") apiKey: String,
+        @Query("days") days: Int
+    ): List<ChargingSession>
 }
