@@ -106,7 +106,11 @@ app.get('/summary/week', requireApiKey, (req, res) => {
 });
 
 app.get('/summary/month', requireApiKey, (req, res) => {
-  res.json(db.getSummaryAggregate(30));
+  res.json(db.getCalendarMonthAggregate());
+});
+
+app.get('/summary/month-days', requireApiKey, (req, res) => {
+  res.json(db.getCalendarMonthDays());
 });
 
 app.get('/charging-sessions', requireApiKey, (req, res) => {
