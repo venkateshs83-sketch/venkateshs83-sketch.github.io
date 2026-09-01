@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
@@ -47,10 +49,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.venkat.tesladashboard.ui.theme.TeslaDashboardTheme
 import java.time.Duration
+import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.RowScope
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,6 +68,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+val MELBOURNE = ZoneId.of("Australia/Melbourne")
+
 fun batteryColor(level: Int?): Color {
     if (level == null) return Color.Gray
     return when {
@@ -78,10 +82,11 @@ fun batteryColor(level: Int?): Color {
 fun milesToKm(miles: Double?): Double? = miles?.let { it * 1.60934 }
 fun fmt(value: Double?): String = value?.let { "%.1f".format(it) } ?: "--"
 
+// Converts a UTC ISO timestamp from the backend into Melbourne local time (handles DST automatically)
 fun formatSessionTime(iso: String?): String {
     if (iso == null) return "--"
     return try {
-        val dt = OffsetDateTime.parse(iso)
+        val dt = OffsetDateTime.parse(iso).atZoneSameInstant(MELBOURNE)
         dt.format(DateTimeFormatter.ofPattern("MMM d, h:mm a"))
     } catch (e: Exception) {
         iso
@@ -91,10 +96,30 @@ fun formatSessionTime(iso: String?): String {
 fun formatTimeOnly(iso: String?): String {
     if (iso == null) return "--"
     return try {
-        val dt = OffsetDateTime.parse(iso)
+        val dt = OffsetDateTime.parse(iso).atZoneSameInstant(MELBOURNE)
         dt.format(DateTimeFormatter.ofPattern("h:mm a"))
     } catch (e: Exception) {
         iso
+    }
+}
+
+// Formats a plain "yyyy-MM-dd" date string as "dd-MM"
+fun formatDateDDMM(dateStr: String?): String {
+    if (dateStr == null) return ""
+    return try {
+        val d = LocalDate.parse(dateStr)
+        d.format(DateTimeFormatter.ofPattern("dd-MM"))
+    } catch (e: Exception) {
+        dateStr
+    }
+}
+
+fun dayOfMonthLabel(dateStr: String?): String {
+    if (dateStr == null) return ""
+    return try {
+        LocalDate.parse(dateStr).dayOfMonth.toString()
+    } catch (e: Exception) {
+        ""
     }
 }
 
@@ -168,10 +193,7 @@ fun BottomNav(selected: String, onSelect: (String) -> Unit) {
 }
 
 @Composable
-fun RowScope_placeholder() {}
-
-@Composable
-fun NavItem(key: String, label: String, icon: ImageVector, selected: String, onSelect: (String) -> Unit) {
+fun RowScope.NavItem(key: String, label: String, icon: ImageVector, selected: String, onSelect: (String) -> Unit) {
     val isSelected = key == selected
     Column(
         modifier = Modifier
@@ -249,9 +271,13 @@ fun StatusCard(viewModel: DashboardViewModel) {
 @Composable
 fun TodayMetrics(viewModel: DashboardViewModel) {
     val summary = viewModel.todaySummary
+    val startB = summary?.start_battery
+    val endB = summary?.end_battery
+    val batteryUsedText = if (startB != null && endB != null) "$startB% \u2192 $endB%" else "--"
+
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         MetricTile("Driven today", "${fmt(summary?.km_driven)} km", Modifier.weight(1f))
-        MetricTile("Energy added", "${fmt(summary?.kwh_added)} kWh", Modifier.weight(1f))
+        MetricTile("Battery used", batteryUsedText, Modifier.weight(1f))
     }
 }
 
@@ -344,7 +370,7 @@ fun HistoryChart(history: List<DailySummary>) {
                         )
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(day.date?.takeLast(5) ?: "", style = MaterialTheme.typography.labelSmall)
+                    Text(formatDateDDMM(day.date), style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -360,18 +386,22 @@ fun MonthChart(history: List<DailySummary>) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(scrollState).padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             history.forEach { day ->
                 val km = day.km_driven ?: 0.0
                 val barHeightDp = (60 * (km / maxKm)).dp.coerceAtLeast(2.dp)
-                Column(
-                    modifier = Modifier.width(8.dp).height(60.dp),
-                    verticalArrangement = Arrangement.Bottom
-                ) {
-                    androidx.compose.foundation.layout.Box(
-                        modifier = Modifier.fillMaxWidth().height(barHeightDp).background(Color(0xFF2196F3))
-                    )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        modifier = Modifier.width(10.dp).height(60.dp),
+                        verticalArrangement = Arrangement.Bottom
+                    ) {
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier.fillMaxWidth().height(barHeightDp).background(Color(0xFF2196F3))
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(dayOfMonthLabel(day.date), style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
