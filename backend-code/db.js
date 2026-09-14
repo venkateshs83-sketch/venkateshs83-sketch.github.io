@@ -159,6 +159,21 @@ function getChargingSessions(days) {
     end_battery: s.endBattery,
   }));
 }
+// Groups daily data into month totals, e.g. Sep 2026, Oct 2026, ...
+function getMonthlyTotals(monthsBack) {
+  return db
+    .prepare(`
+      SELECT
+        strftime('%Y-%m', date) as month,
+        SUM(km_driven) as total_km,
+        SUM(kwh_added) as total_kwh
+      FROM daily_summary
+      WHERE date >= date('now', ?)
+      GROUP BY month
+      ORDER BY month ASC
+    `)
+    .all(`-${monthsBack} months`);
+}
 module.exports = {
   insertReading,
   getReadingsToday,
@@ -171,4 +186,7 @@ module.exports = {
   getChargingSessions,
   getCalendarMonthDays,
   getCalendarMonthAggregate,
+  getCalendarMonthDays,
+  getCalendarMonthAggregate,
+  getMonthlyTotals,
 };
