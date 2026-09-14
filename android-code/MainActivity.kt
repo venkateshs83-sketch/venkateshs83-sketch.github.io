@@ -53,6 +53,8 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,7 +84,6 @@ fun batteryColor(level: Int?): Color {
 fun milesToKm(miles: Double?): Double? = miles?.let { it * 1.60934 }
 fun fmt(value: Double?): String = value?.let { "%.1f".format(it) } ?: "--"
 
-// Converts a UTC ISO timestamp from the backend into Melbourne local time (handles DST automatically)
 fun formatSessionTime(iso: String?): String {
     if (iso == null) return "--"
     return try {
@@ -103,7 +104,6 @@ fun formatTimeOnly(iso: String?): String {
     }
 }
 
-// Formats a plain "yyyy-MM-dd" date string as "dd-MM"
 fun formatDateDDMM(dateStr: String?): String {
     if (dateStr == null) return ""
     return try {
@@ -123,6 +123,17 @@ fun dayOfMonthLabel(dateStr: String?): String {
     }
 }
 
+fun monthLabel(monthStr: String?): String {
+    if (monthStr == null) return ""
+    return try {
+        val parts = monthStr.split("-")
+        val date = LocalDate.of(parts[0].toInt(), parts[1].toInt(), 1)
+        date.month.getDisplayName(TextStyle.SHORT, Locale.getDefault()) + " " + parts[0]
+    } catch (e: Exception) {
+        monthStr
+    }
+}
+
 fun sessionDetail(session: ChargingSession): String {
     return try {
         val start = OffsetDateTime.parse(session.start_time)
@@ -135,6 +146,21 @@ fun sessionDetail(session: ChargingSession): String {
         "Duration ${h}h ${m}m · Avg ${"%.1f".format(avgKw)} kW"
     } catch (e: Exception) {
         ""
+    }
+}
+
+data class WeekBucket(val label: String, val km: Double, val kwh: Double)
+
+fun groupByWeekOfMonth(history: List<DailySummary>): List<WeekBucket> {
+    val buckets = LinkedHashMap<Int, Pair<Double, Double>>()
+    history.forEach { day ->
+        val dayOfMonth = try { LocalDate.parse(day.date).dayOfMonth } catch (e: Exception) { return@forEach }
+        val weekNum = (dayOfMonth - 1) / 7 + 1
+        val (km, kwh) = buckets.getOrDefault(weekNum, 0.0 to 0.0)
+        buckets[weekNum] = (km + (day.km_driven ?: 0.0)) to (kwh + (day.kwh_added ?: 0.0))
+    }
+    return buckets.entries.sortedBy { it.key }.map { (weekNum, totals) ->
+        WeekBucket("Week $weekNum", totals.first, totals.second)
     }
 }
 
@@ -320,6 +346,49 @@ fun MonthTab(viewModel: DashboardViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MetricTile("Total driven", "${fmt(viewModel.monthSummary?.total_km)} km", Modifier.weight(1f))
                 MetricTile("Total energy", "${fmt(viewModel.monthSummary?.total_kwh)} kWh", Modifier.weight(1f))
+            }
+        }
+        item { WeeklyBreakdownCard(viewModel.monthHistory) }
+        item { MonthlyTotalsCard(viewModel.monthlyTotals) }
+    }
+}
+
+@Composable
+fun WeeklyBreakdownCard(monthHistory: List<DailySummary>) {
+    val weeks = groupByWeekOfMonth(monthHistory)
+    if (weeks.isEmpty()) return
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Weeks this month", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            weeks.forEach { week ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(week.label, style = MaterialTheme.typography.bodyMedium)
+                    Text("${fmt(week.km)} km \u00b7 ${fmt(week.kwh)} kWh", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MonthlyTotalsCard(monthlyTotals: List<MonthTotal>) {
+    if (monthlyTotals.isEmpty()) return
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Month by month", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            monthlyTotals.reversed().forEach { m ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(monthLabel(m.month), style = MaterialTheme.typography.bodyMedium)
+                    Text("${fmt(m.total_km)} km \u00b7 ${fmt(m.total_kwh)} kWh", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
