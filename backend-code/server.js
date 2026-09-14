@@ -111,8 +111,12 @@ app.get('/summary/month', requireApiKey, (req, res) => {
 
 app.get('/summary/month-days', requireApiKey, (req, res) => {
   res.json(db.getCalendarMonthDays());
+  
 });
-
+app.get('/summary/monthly-totals', requireApiKey, (req, res) => {
+  const months = parseInt(req.query.months || '12', 10);
+  res.json(db.getMonthlyTotals(months));
+});
 app.get('/charging-sessions', requireApiKey, (req, res) => {
   const days = parseInt(req.query.days || '30', 10);
   res.json(db.getChargingSessions(days));
