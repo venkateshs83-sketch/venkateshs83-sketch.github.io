@@ -24,6 +24,11 @@ data class DailySummary(
     val start_battery: Int?,
     val end_battery: Int?
 )
+data class MonthTotal(
+    val month: String?,
+    val total_km: Double?,
+    val total_kwh: Double?
+)
 
 data class PeriodSummary(
     val days_count: Int?,
@@ -57,6 +62,11 @@ interface TeslaApi {
 
     @GET("summary/week")
     suspend fun getWeekSummary(@Header("x-api-key") apiKey: String): PeriodSummary
+        @GET("summary/monthly-totals")
+    suspend fun getMonthlyTotals(
+        @Header("x-api-key") apiKey: String,
+        @Query("months") months: Int
+    ): List<MonthTotal>
 
     @GET("summary/month")
     suspend fun getMonthSummary(@Header("x-api-key") apiKey: String): PeriodSummary
