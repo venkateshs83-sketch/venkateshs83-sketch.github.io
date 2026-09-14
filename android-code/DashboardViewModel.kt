@@ -28,6 +28,8 @@ class DashboardViewModel : ViewModel() {
         private set
     var errorMessage by mutableStateOf<String?>(null)
         private set
+        var monthlyTotals by mutableStateOf<List<MonthTotal>>(emptyList())
+        private set
 
     fun refresh() {
         viewModelScope.launch {
@@ -35,6 +37,7 @@ class DashboardViewModel : ViewModel() {
             errorMessage = null
             try {
                 latestReading = ApiClient.api.getStatus(API_KEY).latest
+                                monthlyTotals = ApiClient.api.getMonthlyTotals(API_KEY, 12)
                 todaySummary = ApiClient.api.getTodaySummary(API_KEY)
                 history = ApiClient.api.getRangeSummary(API_KEY, 7)
                 monthHistory = ApiClient.api.getMonthDays(API_KEY)
